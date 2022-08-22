@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<style>
+		.var { background-color: lightgreen; }
+    .template { background-color: yellow; }
+	</style>
+</head>
+<body>
+<h2> Gowin FPGA PLL Calculator </h2>
+FPGA Board: <select id='board' onchange=newboard()></select>
+<br><br>
+<!--
+<pre>
+Formulas:
+  # PFD    =  FCLKIN                        /(IDIV_SEL+1)
+  # VCO    = (FCLKIN*(FBDIV_SEL+1)*ODIV_SEL)/(IDIV_SEL+1)
+  # CLKOUT =  FCLKIN*(FBDIV_SEL+1)          /(IDIV_SEL+1)
+</pre>
+-->
+<!--<span id='boardname' class='var'>ISA HDMI card (GW1NR-UV9QN88PC6/I5)</span><br>-->
+
+
+FCLKIN: <input onchange=compute() id='fclkin' value='27'></input> MHz <br>
+<div style='background-color: #e0f0f0;'>
+IDIV_SEL: <select id='idiv_sel' onchange=valuechange()></select> <input type="range" min="0" max="63" class="slider" id="idiv_sel_range" oninput=sliderchange() onchange=sliderchange()> <br>
+
+<pre>
+  # PFD = FCLKIN / (IDIV_SEL+1)
+</pre>
+<ul>
+  <li>PFD = <span class='var' id='pfd'>3</span> MHz (supported range: <span class='var' id='pfd_min'>3</span> MHz - <span class='var' id='pfd_max'>400</span> MHz)</li>
+</ul>
+</div>
+<div style='background-color: #f0e0f0;'>
+FBDIV_SEL: <select id='fbdiv_sel' onchange=valuechange()></select> <input type="range" min="0" max="63" class="slider" id="fbdiv_sel_range" oninput=sliderchange() onchange=sliderchange()> <br>
+
+<pre>
+  # CLKOUT = FCLKIN * (FBDIV_SEL+1) / (IDIV_SEL+1)
+</pre>
+
+<ul>
+  <li><span style='border: solid 3px gold; width: 200px; background-color: lightblue'>CLKOUT = <input onchange=solve_pll() id='clkout' value=''></input> MHz</span> <input type="range" min="1" max="1728" class="slider" id="clkout_slider" style='width: 300px;' oninput=solve_pll_slider() onchange=solve_pll_slider()> (supported range: <span class='var' id='clkout_min'>4.6875</span> MHz - <span class='var' id='clkout_max'>600</span> MHz)</li>
+</ul>
+</div>
+<div style='background-color: #e0f0f0;'>
+ODIV_SEL: <select id='odiv_sel' onchange=valuechange()></select> <input type="range" min="2" max="128" class="slider" id="odiv_sel_range" oninput=sliderchange() onchange=sliderchange()> <br>
+
+<pre>
+  # VCO = (FCLKIN * (FBDIV_SEL+1) * ODIV_SEL) / (IDIV_SEL+1)
+</pre>
+
+<ul>
+  <li>VCO = <span class='var' id='vco'>600</span> MHz (supported range: <span class='var' id='vco_min'>600</span> MHz - <span class='var' id='vco_max'>1200</span> MHz)</li>
+</ul>
+</div>
+<hr>
+<input type="checkbox" id="enable_clkoutd" onclick="refresh_toggle_clkoutd()">Enable CLKOUTD output signal? <br>
+
+<div id='clkoutd_panel' style='display:none; background-color: #f0e0f0;'>
+  
+  DYN_SDIV_SEL: <select id='dyn_sdiv_sel' onchange=valuechange()></select> <input type="range" min="2" max="128" class="slider" id="dyn_sdiv_sel_range" oninput=sliderchange() onchange=sliderchange()>
+
+<pre>
+# CLKOUTD = CLKOUT / DYN_SDIV_SEL
+</pre>
+  <ul>
+    <li>CLKOUTD = <span class='var' id='clkoutd'></span> MHz</li>
+  </ul>
+
+</div>
+<hr>
+
+Verilog instantiation code:<br><br>
+<span style='font-family: monospace'>
+<span id='pll'></span> #( // For <span id='v_boardname'></span><br>
+&nbsp;&nbsp;.FCLKIN("<span id='v_fclkin'></span>"),<br>
+&nbsp;&nbsp;.IDIV_SEL(<span id='v_idiv_sel'></span>), // -> PFD = <span id='v_pfd'></span> MHz (range: <span id='v_pfd_min'></span>-<span id='v_pfd_max'></span> MHz)<br>
+&nbsp;&nbsp;.FBDIV_SEL(<span id='v_fbdiv_sel'></span>), // -> CLKOUT = <span id='v_clkout2'></span> MHz (range: <span id='v_clkout_min'></span>-<span id='v_clkout_max'></span> MHz)<br>
+<span id='v_clkoutd_enabled'>
+&nbsp;&nbsp;.DYN_SDIV_SEL(<span id='v_dyn_sdiv_sel'></span>),
+</span>
+&nbsp;&nbsp;.ODIV_SEL(<span id='v_odiv_sel'></span>) // -> VCO = <span id='v_vco'></span> MHz (range: <span id='v_vco_min'></span>-<span id='v_vco_max'></span> MHz)<br>
+) pll (.CLKOUTP()<span id='v_clkoutd_not_enabled'>, .CLKOUTD()</span>, .CLKOUTD3(), .RESET(1'b0), .RESET_P(1'b0), .CLKFB(1'b0), .FBDSEL(6'b0), .IDSEL(6'b0), .ODSEL(6'b0), .PSDA(4'b0), .DUTYDA(4'b0), .FDLY(4'b0),<br>
+&nbsp;&nbsp;.CLKIN(<span class='template'>in_clk</span>), // <span id='v_fclkin2'></span> MHz<br>
+&nbsp;&nbsp;.CLKOUT(<span class='template'>out_clk</span>), // <span id='v_clkout'></span> MHz<br>
+<span id='v_clkoutd_enabled2'>&nbsp;&nbsp;.CLKOUTD(<span class='template'>out_clkoutd</span>), // <span id='v_clkoutd'></span> MHz<br></span>
+&nbsp;&nbsp;.LOCK(<span class='template'>clk_lock</span>)<br>
+);<br>
+</span>
+<script>
+let boards = {
+  'tangnano4k': { name: 'GW1NSR-4C C6/I5 (Tang Nano 4K proto dev board)', pll: 'PLLVR', pfd_min: 3, pfd_max: 400, vco_min: 600, vco_max: 1200, clkout_min: 4.6875, clkout_max: 600 },
+  'tangnano9k': { name: 'GW1NR-9C C6/I5 (Tang Nano 9K proto dev board)', pll: 'rPLL', pfd_min: 3, pfd_max: 400, vco_min: 400, vco_max: 1200, clkout_min: 3.125, clkout_max: 600 },
+  'gw1nr-c9/c6': { name: 'GW1NR-9 C6/I5', pll: 'rPLL', pfd_min: 3, pfd_max: 400, vco_min: 400, vco_max: 1000, clkout_min: 3.125, clkout_max: 500 },
+};
+let board = document.getElementById('board');
+for(let bi in boards) {
+  let b = boards[bi];
+  let opt = document.createElement('option');
+  opt.value = bi;
+  opt.innerHTML = b.name;
+  board.appendChild(opt);
+}
+
+let fclkin = document.getElementById('fclkin');
+let fbdiv_sel = document.getElementById('fbdiv_sel');
+let idiv_sel = document.getElementById('idiv_sel');
+let odiv_sel = document.getElementById('odiv_sel');
+let dyn_sdiv_sel = document.getElementById('dyn_sdiv_sel');
+let fbdiv_sel_range = document.getElementById('fbdiv_sel_range');
+let idiv_sel_range = document.getElementById('idiv_sel_range');
+let odiv_sel_range = document.getElementById('odiv_sel_range');
+let dyn_sdiv_range = document.getElementById('dyn_sdiv_sel_range');
+let pfd = document.getElementById('pfd');
+let vco = document.getElementById('vco');
+let clkout = document.getElementById('clkout');
+let clkout_slider = document.getElementById('clkout_slider');
+let clkoutd = document.getElementById('clkoutd');
+
+for(let i = 0; i <= 63; ++i) {
+  let opt = document.createElement('option');
+  let opt2 = document.createElement('option');
+  opt.value = opt2.value = i;
+  opt.innerHTML = opt2.innerHTML = i;
+  fbdiv_sel.appendChild(opt);
+  idiv_sel.appendChild(opt2);
+}
+for(let i = 2; i <= 128; i += 2) {
+  let opt = document.createElement('option');
+  opt.value = i;
+  opt.innerHTML = i;
+  dyn_sdiv_sel.appendChild(opt);
+}
+
+const odiv_sel_values = [2,4,8,16,32,48,64,80,96,112,128];
+
+for(let i of odiv_sel_values) {
+  let opt = document.createElement('option');
+  opt.value = i;
+  opt.innerHTML = i;
+  odiv_sel.appendChild(opt);
+}
+
+// Choose default values
+fbdiv_sel.value = 13;
+idiv_sel.value = 2;
+dyn_sdiv_sel.value = 2;
+odiv_sel.value = 8;
+
+let currentBoard = null;
+function newboard() {
+  currentBoard = boards[board.value];
+//  document.getElementById('boardname').innerHTML = currentBoard.name;
+  for(let e of ['pfd_min', 'pfd_max', 'vco_min', 'vco_max', 'clkout_min', 'clkout_max']) {
+    document.getElementById(e).innerHTML = currentBoard[e];
+  }
+  valuechange();
+}
+newboard();
+
+function refresh_toggle_clkoutd() {
+  const enabled = document.getElementById('enable_clkoutd').checked;
+  document.getElementById('clkoutd_panel').style.display = enabled ? 'block' : 'none';
+  document.getElementById('v_clkoutd_enabled').style.display = enabled ? 'block' : 'none';
+  document.getElementById('v_clkoutd_enabled2').style.display = enabled ? 'block' : 'none';
+  document.getElementById('v_clkoutd_not_enabled').style.display = !enabled ? 'inline' : 'none';
+  compute();
+}
+refresh_toggle_clkoutd();
+
+function valuechange() {
+  fbdiv_sel_range.value = fbdiv_sel.value;
+  idiv_sel_range.value = idiv_sel.value;
+  odiv_sel_range.value = odiv_sel.value;
+  dyn_sdiv_sel_range.value = dyn_sdiv_sel.value;
+  compute();
+}
+
+function findClosest(val, arr) {
+  let closest = Infinity;
+  let closestVal = NaN;
+  for(let v of arr) {
+    if (Math.abs(val - v) < closest) {
+      closest = Math.abs(val - v);
+      closestVal = v;
+    }
+  }
+  return closestVal;
+}
+
+function sliderchange() {
+  fbdiv_sel.value = fbdiv_sel_range.value;
+  idiv_sel.value = idiv_sel_range.value;
+  odiv_sel.value = findClosest(odiv_sel_range.value, odiv_sel_values);
+  dyn_sdiv_sel.value = Math.floor(dyn_sdiv_sel_range.value / 2) * 2;
+  compute();
+}
+
+function solve(targetMhz) {
+  let FCLKIN = Number(fclkin.value);
+  let bestFbdiv = 0, bestIdiv = 0;
+  let bestPfdPenalty = Infinity;
+  function calc(fb, i) {
+    return FCLKIN*(fb+1)/(i+1);
+  }
+  function pfdPenalty(i) {
+    let pfd = FCLKIN / (i + 1);
+    return Math.max(Math.max(currentBoard.pfd_min - pfd, pfd - currentBoard.vco_max), 0);
+  }
+  for(let idiv = 0; idiv <= 63; ++idiv) {
+    if (pfdPenalty(idiv) == 0) {
+      for(let fbdiv = 0; fbdiv <= 63; ++fbdiv) {
+        if (Math.abs(calc(fbdiv, idiv) - targetMhz) < Math.abs(calc(bestFbdiv, bestIdiv) - targetMhz)) {
+          bestFbdiv = fbdiv;
+          bestIdiv = idiv;
+        }
+      }
+    }
+  }
+  let bestOdiv = odiv_sel_values[0];
+  for(let o of odiv_sel_values) {
+    function vcoPenalty(odiv) {
+      let vco = FCLKIN * (bestFbdiv + 1) * odiv / (bestIdiv + 1);
+      return Math.max(Math.max(currentBoard.vco_min - vco, vco - currentBoard.vco_max), 0);
+    }
+    if (vcoPenalty(o) < vcoPenalty(bestOdiv)) {
+      bestOdiv = o;
+    }
+  }
+  if (targetMhz < 5 && vcoPenalty(bestOdiv) > 0) bestOdiv = odiv_sel_values[odiv_sel_values.length-1];
+  fbdiv_sel.value = bestFbdiv;
+  idiv_sel.value = bestIdiv;
+  odiv_sel.value = bestOdiv;
+  valuechange();
+}
+
+function solve_pll() {
+  let val = clkout.value;
+  solve(clkout.value);
+//  clkout.value = val;
+}
+
+function solve_pll_slider() {
+  solve(clkout_slider.value);
+}
+
+function compute() {
+  let FCLKIN = Number(fclkin.value);
+  let FBDIV_SEL = Number(fbdiv_sel.value);
+  let IDIV_SEL = Number(idiv_sel.value);
+  let ODIV_SEL = Number(odiv_sel.value);
+  let DYN_SDIV_SEL = Number(dyn_sdiv_sel.value);
+  let PFD = FCLKIN/(IDIV_SEL+1);
+  pfd.innerHTML = PFD;
+  pfd.style['background-color'] = (PFD < currentBoard.pfd_min || PFD > currentBoard.pfd_max) ? 'red' : 'lightgreen';
+  document.getElementById('pfd_min').style['background-color'] = PFD < currentBoard.pfd_min ? 'red' : 'lightgreen';
+  document.getElementById('pfd_max').style['background-color'] = PFD > currentBoard.pfd_max ? 'red' : 'lightgreen';
+  let VCO = (FCLKIN*(FBDIV_SEL+1)*ODIV_SEL)/(IDIV_SEL+1);
+  vco.innerHTML = VCO;
+  vco.style['background-color'] = (VCO < currentBoard.vco_min || VCO > currentBoard.vco_max) ? 'red' : 'lightgreen';
+  document.getElementById('vco_min').style['background-color'] = VCO < currentBoard.vco_min ? 'red' : 'lightgreen';
+  document.getElementById('vco_max').style['background-color'] = VCO > currentBoard.vco_max ? 'red' : 'lightgreen';
+  let CLKOUT = FCLKIN*(FBDIV_SEL+1)/(IDIV_SEL+1);
+  clkout.value = CLKOUT;
+  clkout_slider.value = CLKOUT;
+  clkout.style['background-color'] = (CLKOUT < currentBoard.clkout_min || CLKOUT > currentBoard.clkout_max) ? 'red' : 'lightgreen';
+  document.getElementById('clkout_min').style['background-color'] = CLKOUT < currentBoard.clkout_min ? 'red' : 'lightgreen';
+  document.getElementById('clkout_max').style['background-color'] = CLKOUT > currentBoard.clkout_max ? 'red' : 'lightgreen';
+  let CLKOUTD = CLKOUT / DYN_SDIV_SEL;
+  clkoutd.innerHTML = CLKOUTD;
+
+  document.getElementById('pll').innerHTML = currentBoard.pll;
+  document.getElementById('v_boardname').innerHTML = currentBoard.name;
+  document.getElementById('v_fclkin').innerHTML = FCLKIN;
+  document.getElementById('v_fclkin2').innerHTML = FCLKIN;
+  document.getElementById('v_clkout').innerHTML = CLKOUT;
+  document.getElementById('v_clkout2').innerHTML = CLKOUT;
+  document.getElementById('v_clkoutd').innerHTML = CLKOUTD;
+  document.getElementById('v_idiv_sel').innerHTML = IDIV_SEL;
+  document.getElementById('v_odiv_sel').innerHTML = ODIV_SEL;
+  document.getElementById('v_fbdiv_sel').innerHTML = FBDIV_SEL;
+  document.getElementById('v_dyn_sdiv_sel').innerHTML = DYN_SDIV_SEL;
+  document.getElementById('v_pfd').innerHTML = PFD;
+  document.getElementById('v_pfd_min').innerHTML = currentBoard.pfd_min;
+  document.getElementById('v_pfd_max').innerHTML = currentBoard.pfd_max;
+  document.getElementById('v_vco').innerHTML = VCO;
+  document.getElementById('v_vco_min').innerHTML = currentBoard.vco_min;
+  document.getElementById('v_vco_max').innerHTML = currentBoard.vco_max;
+  document.getElementById('v_clkout_min').innerHTML = currentBoard.clkout_min;
+  document.getElementById('v_clkout_max').innerHTML = currentBoard.clkout_max;
+}
+
+</script>
+</body>
+</html>
