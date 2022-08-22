@@ -71,8 +71,9 @@ ODIV_SEL: <select id='odiv_sel' onchange=valuechange()></select> <input type="ra
 </div>
 <hr>
 
-Verilog instantiation code:<br><br>
-<span style='font-family: monospace'>
+Verilog instantiation code: (copy-paste this in your project)<br><br>
+<div style='background-color: #eeeeee;' id='verilog_code' onclick='selectText("verilog_code")'>
+<span style='font-family: monospace;'>
 <span id='pll'></span> #( // For <span id='v_boardname'></span><br>
 &nbsp;&nbsp;.FCLKIN("<span id='v_fclkin'></span>"),<br>
 &nbsp;&nbsp;.IDIV_SEL(<span id='v_idiv_sel'></span>), // -> PFD = <span id='v_pfd'></span> MHz (range: <span id='v_pfd_min'></span>-<span id='v_pfd_max'></span> MHz)<br>
@@ -88,6 +89,7 @@ Verilog instantiation code:<br><br>
 &nbsp;&nbsp;.LOCK(<span class='template'>clk_lock</span>)<br>
 );<br>
 </span>
+</div>
 <script>
 let boards = {
   'tangnano4k': { name: 'GW1NSR-4C C6/I5 (Tang Nano 4K proto dev board)', pll: 'PLLVR', pfd_min: 3, pfd_max: 400, vco_min: 600, vco_max: 1200, clkout_min: 4.6875, clkout_max: 600 },
@@ -290,6 +292,22 @@ function compute() {
   document.getElementById('v_vco_max').innerHTML = currentBoard.vco_max;
   document.getElementById('v_clkout_min').innerHTML = currentBoard.clkout_min;
   document.getElementById('v_clkout_max').innerHTML = currentBoard.clkout_max;
+}
+
+// http://stackoverflow.com/questions/985272/selecting-text-in-an-element-akin-to-highlighting-with-your-mouse
+function selectText(element) {
+  var doc = document, text = doc.getElementById(element), range, selection;
+  if (doc.body.createTextRange) {
+      range = document.body.createTextRange();
+      range.moveToElementText(text);
+      range.select();
+  } else if (window.getSelection) {
+      selection = window.getSelection();
+      range = document.createRange();
+      range.selectNodeContents(text);
+      selection.removeAllRanges();
+      selection.addRange(range);
+  }
 }
 
 </script>
