@@ -81,7 +81,7 @@ Verilog instantiation code:<br><br>
 &nbsp;&nbsp;.DYN_SDIV_SEL(<span id='v_dyn_sdiv_sel'></span>),
 </span>
 &nbsp;&nbsp;.ODIV_SEL(<span id='v_odiv_sel'></span>) // -> VCO = <span id='v_vco'></span> MHz (range: <span id='v_vco_min'></span>-<span id='v_vco_max'></span> MHz)<br>
-) pll (.CLKOUTP()<span id='v_clkoutd_not_enabled'>, .CLKOUTD()</span>, .CLKOUTD3(), .RESET(1'b0), .RESET_P(1'b0), .CLKFB(1'b0), .FBDSEL(6'b0), .IDSEL(6'b0), .ODSEL(6'b0), .PSDA(4'b0), .DUTYDA(4'b0), .FDLY(4'b0),<br>
+) pll (.CLKOUTP()<span id='v_clkoutd_not_enabled'>, .CLKOUTD()</span>, .CLKOUTD3(), .RESET(1'b0), .RESET_P(1'b0), .CLKFB(1'b0), .FBDSEL(6'b0), .IDSEL(6'b0), .ODSEL(6'b0), .PSDA(4'b0), .DUTYDA(4'b0), .FDLY(4'b0), <span id='vren'>.VREN(1'b1), </span><br>
 &nbsp;&nbsp;.CLKIN(<span class='template'>in_clk</span>), // <span id='v_fclkin2'></span> MHz<br>
 &nbsp;&nbsp;.CLKOUT(<span class='template'>out_clk</span>), // <span id='v_clkout'></span> MHz<br>
 <span id='v_clkoutd_enabled2'>&nbsp;&nbsp;.CLKOUTD(<span class='template'>out_clkoutd</span>), // <span id='v_clkoutd'></span> MHz<br></span>
@@ -271,6 +271,7 @@ function compute() {
   clkoutd.innerHTML = CLKOUTD;
 
   document.getElementById('pll').innerHTML = currentBoard.pll;
+  document.getElementById('vren').style.display = currentBoard.pll == 'PLLVR' ? 'inline' : 'none';
   document.getElementById('v_boardname').innerHTML = currentBoard.name;
   document.getElementById('v_fclkin').innerHTML = FCLKIN;
   document.getElementById('v_fclkin2').innerHTML = FCLKIN;
