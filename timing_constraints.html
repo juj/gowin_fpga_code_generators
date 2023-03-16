@@ -1,0 +1,432 @@
+<html>
+<head>
+</head>
+<body>
+<canvas style='width:100%; height:400px'></canvas>
+create_clock -name my_clk -period <input id='clk_period' value='10.000' onchange='repaint()'> -waveform {<input id='clk_waveform_rise' value='0.0' onchange='repaint()'> <input id='clk_waveform_fall' value='5.0' onchange='repaint()'> }</input>
+<br><input type="checkbox" id="clock_uncertainty" onclick="repaint()"><label for="clock_uncertainty">Clock uncertainty</label>
+
+<div id='clock_uncertainty_directives'>
+set_clock_uncertainty -setup <input id='clk_setup_uncertainty' value='0.5' onchange='repaint()'> [get_clocks my_clk]
+<br>set_clock_uncertainty -hold <input id='clk_hold_uncertainty' value='0.5' onchange='repaint()'> [get_clocks my_clk]
+</div>
+
+<br>Data signal: <select id="logic_edge" onchange='repaint()'>
+    <option value="none">None</option>
+    <option value="posedge">always @(posedge my_clk) ...</option>
+    <option value="negedge">always @(negedge my_clk) ...</option>
+<!--    <option value="ddr">DDR</option> -->
+</select>
+
+<div id='data_signal_directives'>
+<br>set_input_delay -clock my_clk -min <input id='input_min_delay' value='2' onchange='repaint()'> [get_ports {input_a input_b input_c}]
+<br>set_input_delay -clock my_clk -max <input id='input_max_delay' value='7' onchange='repaint()'> [get_ports {input_a input_b input_c}]
+</div>
+
+<script>
+let canvas = document.querySelector('canvas');
+let ctx = canvas.getContext('2d');
+
+function dashedLine(x1, y1, x2, y2, color, lineWidth = 2) {
+  ctx.beginPath();
+  ctx.setLineDash([5, 10]);
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
+  ctx.lineWidth = lineWidth;
+  if (color) ctx.strokeStyle = color;
+  ctx.stroke();
+}
+
+function solidLine(x1, y1, x2, y2, color, lineWidth = 2) {
+  ctx.beginPath();
+  ctx.setLineDash([]);
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
+  ctx.lineWidth = lineWidth;
+  if (color) ctx.strokeStyle = color;
+  ctx.stroke();
+}
+
+function get_clk_rise_ns() {
+  return parseFloat(document.getElementById('clk_waveform_rise').value);
+}
+
+function get_clk_fall_ns() {
+  return parseFloat(document.getElementById('clk_waveform_fall').value);
+}
+
+function get_clk_edge_ns() {
+  return document.getElementById('logic_edge').value == 'posedge' ? get_clk_rise_ns() : get_clk_fall_ns();
+}
+
+function get_clk_period() {
+  return parseFloat(document.getElementById('clk_period').value);
+}
+
+function canvas_x_to_data_x(canvasX) {
+  let x0 = W/4;
+  let x1 = 3*W/4;
+
+  let clk_period = get_clk_period();
+  return (canvasX - x0) / (x1-x0) * clk_period;
+}
+
+let clk_rise_x = [];
+let clk_fall_x = [];
+let data_delay_start_x = [], data_delay_end_x = [];
+
+function dist(a, b) {
+  return Math.abs(a-b);
+}
+
+let H, W;
+let mouseAction = null;
+let mouseActionStartX = null;
+let dragElementStartX = null;
+
+canvas.onmousemove = function(event) {
+  let mX = event.offsetX * window.devicePixelRatio;
+  let mY = event.offsetY * window.devicePixelRatio;
+
+  if (mouseAction === null || mouseAction.startsWith('hover-')) {
+    if (mY >= 50 && mY <= H-50) {
+      for(let i of clk_rise_x) {
+        if (dist(mX, i) < 10) {
+          canvas.style.cursor = 'col-resize';
+          mouseAction = get_clk_fall_ns() < get_clk_rise_ns() ? 'hover-fall' : 'hover-rise';
+          dragElementStartX = i;
+          return;
+        }
+      }
+      for(let i of clk_fall_x) {
+        if (dist(mX, i) < 10) {
+          canvas.style.cursor = 'col-resize';
+          mouseAction = get_clk_fall_ns() < get_clk_rise_ns() ? 'hover-rise' : 'hover-fall';
+          dragElementStartX = i;
+          return;
+        }
+      }
+    }
+    if (mY >= 100 && mY <= H-100) {
+      for(let i of data_delay_start_x) {
+        if (dist(i, mX) < 10) {
+            canvas.style.cursor = 'col-resize';
+            mouseAction = 'hover-data-delay-start';
+            dragElementStartX = i;
+            return;
+        }
+      }
+      for(let i of data_delay_end_x) {
+        if (dist(i, mX) < 10) {
+            canvas.style.cursor = 'col-resize';
+            mouseAction = 'hover-data-delay-end';
+            dragElementStartX = i;
+            return;
+        }
+      }
+    }
+    mouseAction = null;
+    canvas.style.cursor = 'crosshair';
+  }
+
+  if (mouseAction === 'drag-rise') {
+    let dataX = canvas_x_to_data_x((mX - mouseActionStartX) + dragElementStartX);
+    if (dataX < 0) dataX += get_clk_period();
+    if (dataX > get_clk_period()) dataX -= get_clk_period();
+    document.getElementById('clk_waveform_rise').value = dataX.toFixed(3);
+    repaint();
+  }
+
+  if (mouseAction === 'drag-fall') {
+    let dataX = canvas_x_to_data_x((mX - mouseActionStartX) + dragElementStartX);
+    if (dataX < 0) dataX += get_clk_period();
+    if (dataX > get_clk_period()) dataX -= get_clk_period();
+    document.getElementById('clk_waveform_fall').value = dataX.toFixed(3);
+    repaint();
+  }
+
+  if (mouseAction === 'drag-data-delay-start') {
+    let dataX = canvas_x_to_data_x((mX - mouseActionStartX) + dragElementStartX);
+    dataX -= get_clk_edge_ns();
+    if (dataX < 0) dataX += get_clk_period();
+    if (dataX > get_clk_period()) dataX -= get_clk_period();
+
+    let maxVal = parseFloat(document.getElementById('input_max_delay').value);
+    if (dataX < maxVal) {
+      document.getElementById('input_min_delay').value = dataX.toFixed(3);
+    } else {
+      document.getElementById('input_min_delay').value = maxVal.toFixed(3);
+      document.getElementById('input_max_delay').value = dataX.toFixed(3);
+      mouseAction = 'drag-data-delay-end';
+    }
+    repaint();
+  }
+
+  if (mouseAction === 'drag-data-delay-end') {
+    let dataX = canvas_x_to_data_x((mX - mouseActionStartX) + dragElementStartX);
+    dataX -= get_clk_edge_ns();
+    if (dataX < 0) dataX += get_clk_period();
+    if (dataX > get_clk_period()) dataX -= get_clk_period();
+
+    let minVal = parseFloat(document.getElementById('input_min_delay').value);
+    if (dataX > minVal) {
+      document.getElementById('input_max_delay').value = dataX.toFixed(3);
+    } else {
+      document.getElementById('input_max_delay').value = minVal.toFixed(3);
+      document.getElementById('input_min_delay').value = dataX.toFixed(3);
+      mouseAction = 'drag-data-delay-start';
+    }
+    repaint();
+  }
+}
+
+canvas.onmousedown = function(event) {
+  let mX = event.offsetX * window.devicePixelRatio;
+  let mY = event.offsetY * window.devicePixelRatio;
+
+  if (mouseAction === 'hover-rise') {
+    mouseAction = 'drag-rise';
+  }
+
+  if (mouseAction === 'hover-fall') {
+    mouseAction = 'drag-fall';
+  }
+
+  if (mouseAction === 'hover-data-delay-start') {
+    mouseAction = 'drag-data-delay-start';
+  }
+
+  if (mouseAction === 'hover-data-delay-end') {
+    mouseAction = 'drag-data-delay-end';
+  }
+  mouseActionStartX = mX;
+}
+
+canvas.onmouseup = function(event) {
+  let mX = event.offsetX * window.devicePixelRatio;
+  let mY = event.offsetY * window.devicePixelRatio;
+
+  mouseAction = null;
+  repaint();
+}
+
+function drawArrow(fromx, fromy, tox, toy, arrowWidth, color){
+  //variables to be used when creating the arrow
+  var headlen = 10;
+  var angle = Math.atan2(toy-fromy,tox-fromx);
+
+  ctx.save();
+  ctx.strokeStyle = color;
+
+  //starting path of the arrow from the start square to the end square
+  //and drawing the stroke
+  ctx.beginPath();
+  ctx.moveTo(fromx, fromy);
+  ctx.lineTo(tox, toy);
+  ctx.lineWidth = arrowWidth;
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.moveTo(fromx-headlen*Math.cos(angle-Math.PI/2),
+             fromy-headlen*Math.sin(angle-Math.PI/2));
+  ctx.lineTo(fromx+headlen*Math.cos(angle-Math.PI/2),
+             fromy+headlen*Math.sin(angle-Math.PI/2));
+  ctx.lineWidth = arrowWidth;
+  ctx.stroke();
+
+  //starting a new path from the head of the arrow to one of the sides of
+  //the point
+  ctx.beginPath();
+  ctx.moveTo(tox, toy);
+  ctx.lineTo(tox-headlen*Math.cos(angle-Math.PI/7),
+             toy-headlen*Math.sin(angle-Math.PI/7));
+
+  //path from the side point of the arrow, to the other side point
+  ctx.lineTo(tox-headlen*Math.cos(angle+Math.PI/7),
+             toy-headlen*Math.sin(angle+Math.PI/7));
+
+  //path from the side point back to the tip of the arrow, and then
+  //again to the opposite side point
+  ctx.lineTo(tox, toy);
+  ctx.lineTo(tox-headlen*Math.cos(angle-Math.PI/7),
+             toy-headlen*Math.sin(angle-Math.PI/7));
+
+  //draws the paths created above
+  ctx.stroke();
+  ctx.restore();
+}
+
+function repaint() {
+  let rect = canvas.getBoundingClientRect();
+  W = canvas.width = rect.width * devicePixelRatio;
+  H = canvas.height = rect.height * devicePixelRatio;
+  ctx.fillStyle = 'black';
+  ctx.fillRect(0, 0, W, H);
+  solidLine(0, H-50, W, H-50, 'green');
+
+  let x0 = W/4;
+  let x1 = 3*W/4;
+  dashedLine(x0, 0, x0, H-50, 'green')
+  dashedLine(x1, 0, x1, H-50, 'green')
+
+  ctx.font = "24px serif";
+  ctx.fillStyle = 'orange';
+  ctx.textBaseline = 'top';
+  ctx.textAlign = 'center';
+  ctx.fillText("0.0ns", x0, H-40);
+  let clk_period = get_clk_period(); 
+  ctx.fillText(`${document.getElementById('clk_period').value}ns`, x1, H-40);
+
+  let clk_rise_ns = get_clk_rise_ns();
+  let clk_fall_ns = get_clk_fall_ns();
+
+  let yHi = 50;
+  let yLo = H-50;
+
+  let is_clk_reversed = (clk_fall_ns < clk_rise_ns);
+  if (is_clk_reversed) {
+    let tmp = yHi;
+    yHi = yLo;
+    yLo = tmp;
+    tmp = clk_rise_ns;
+    clk_rise_ns = clk_fall_ns;
+    clk_fall_ns = tmp;
+  }
+
+  clk_rise_x = [];
+  clk_fall_x = [];
+
+  let periodLenPixels = x1-x0;
+  let clk_x0 = x0;
+  let clk_y0 = yLo;
+
+  let clk_x1 = x0 + clk_rise_ns / clk_period * periodLenPixels;
+  let clk_y1 = clk_y0;
+  // ..transition..
+  let clk_x2 = clk_x1;
+  let clk_y2 = yHi;
+
+  let clk_x3 = x0 + clk_fall_ns / clk_period * periodLenPixels;
+  let clk_y3 = clk_y2;
+  // ..transition..
+  let clk_x4 = clk_x3;
+  let clk_y4 = yLo;
+
+  let clk_x5 = x1;
+  let clk_y5 = clk_y4;
+
+  let logic_edge = document.getElementById('logic_edge').value;
+
+  document.getElementById('data_signal_directives').style.display = (logic_edge == 'none') ? 'none' : 'block';
+
+  let clock_uncertainty = document.getElementById('clock_uncertainty').checked;
+
+  document.getElementById('clock_uncertainty_directives').style.display = clock_uncertainty ? 'block' : 'none';
+
+  if (clock_uncertainty) {
+    for(let edge of ['negedge', 'posedge']) {
+      let dir = (edge == 'negedge');
+      if (logic_edge == 'ddr' || logic_edge == edge || (edge == 'posedge' && logic_edge == 'none')) {
+        // draw clock signal setup uncertainty
+        let rise_ns = is_clk_reversed ^ dir ? clk_fall_ns : clk_rise_ns;
+        let toggle_x_pos = is_clk_reversed ^ dir ? clk_x3 : clk_x1;
+        let color = '#7A4520';
+        for(let i = -1; i <= 1; ++i) {
+          let s = i*periodLenPixels;
+          let clk_x1_uncertainty = x0 + (rise_ns - parseFloat(document.getElementById('clk_setup_uncertainty').value)) / clk_period * periodLenPixels;
+          for(let xi = clk_x1_uncertainty; xi < toggle_x_pos; xi += 4) {
+            solidLine(xi+s, yLo, xi+s, yHi, color, xi == clk_x1_uncertainty ? 2 : 1);
+          }
+          solidLine(clk_x1_uncertainty+s, 50, toggle_x_pos+s, 50, color);
+          solidLine(clk_x1_uncertainty+s, H-50, toggle_x_pos+s, H-50, color);
+        }
+
+        // draw clock signal hold uncertainty
+        color = '#BA2510';
+        for(let i = -1; i <= 1; ++i) {
+          let s = i*periodLenPixels;
+          let clk_x1_uncertainty = x0 + (rise_ns + parseFloat(document.getElementById('clk_hold_uncertainty').value)) / clk_period * periodLenPixels;
+          for(let xi = clk_x1_uncertainty; xi >= toggle_x_pos; xi -= 4) {
+            solidLine(xi+s, yLo, xi+s, yHi, color, xi == clk_x1_uncertainty ? 2 : 1);
+          }
+          solidLine(clk_x1_uncertainty+s, 50, toggle_x_pos+s, 50, color);
+          solidLine(clk_x1_uncertainty+s, H-50, toggle_x_pos+s, H-50, color);
+        }
+      }
+    }
+  }
+
+  // draw clock signal
+  for(let i = -1; i <= 1; ++i) {
+    let s = i*periodLenPixels;
+    solidLine(clk_x0+s, clk_y0, clk_x1+s, clk_y1, 'yellow', 3);
+    solidLine(clk_x1+s, clk_y1, clk_x2+s, clk_y2, 'yellow', 3);
+    solidLine(clk_x2+s, clk_y2, clk_x3+s, clk_y3, 'yellow', 3);
+    solidLine(clk_x3+s, clk_y3, clk_x4+s, clk_y4, 'yellow', 3);
+    solidLine(clk_x4+s, clk_y4, clk_x5+s, clk_y5, 'yellow', 3);
+
+    clk_rise_x.push(clk_x1+s);
+    clk_fall_x.push(clk_x3+s);
+  }
+
+  let rise_x = x0 + get_clk_rise_ns() / clk_period * periodLenPixels;
+  let fall_x = x0 + get_clk_fall_ns() / clk_period * periodLenPixels;
+
+  let data_delay_min_edge_x = (logic_edge == 'posedge') ? rise_x : fall_x;
+
+  let input_min_delay = parseFloat(document.getElementById('input_min_delay').value);
+  let input_max_delay = parseFloat(document.getElementById('input_max_delay').value);
+  let d_min_x0 = data_delay_min_edge_x + input_min_delay / clk_period * periodLenPixels;
+  let d_max_x0 = data_delay_min_edge_x + input_max_delay / clk_period * periodLenPixels;
+
+  if (document.getElementById('logic_edge').value != 'none') {
+    // draw data signal
+    let d_y0 = 100;
+    let d_y1 = H-100;
+    solidLine(0, d_y0, W, d_y0, 'lightgreen', 3);
+    solidLine(0, d_y1, W, d_y1, 'lightgreen', 3);
+
+    data_delay_start_x = [];
+    data_delay_end_x = [];
+    for(let i = -2; i <= 2; ++i) {
+      let s = i*periodLenPixels;
+
+      data_delay_start_x.push(d_min_x0+s);
+      data_delay_end_x.push(d_max_x0+s);
+      for(let x = d_min_x0; x+30 <= d_max_x0; x += 10) {
+        solidLine(x+s, d_y0, x+30+s, d_y1, 'green', 1);
+      }
+      for(let x = d_max_x0; x-30 >= d_min_x0; x -= 10) {
+        solidLine(x+s, d_y0, x-30+s, d_y1, 'green', 1);
+      }
+      solidLine(d_min_x0+s, d_y0, d_min_x0+s, d_y1, 'lightgreen', 3);
+      solidLine(d_max_x0+s, d_y0, d_max_x0+s, d_y1, 'lightgreen', 3);
+
+      ctx.font = "24px serif";
+      ctx.fillStyle = 'lightgreen';
+      ctx.textBaseline = 'middle';
+      ctx.textAlign = 'center';
+      ctx.fillText("data invalid", (d_min_x0 + d_max_x0)/2+s, (d_y0+d_y1)/2);
+      ctx.fillText("data valid", (d_min_x0 + d_max_x0 + periodLenPixels)/2+s, (d_y0+d_y1)/2);
+    }
+  }
+
+  function drawToolTipArrow(x0, x1, time) {
+    drawArrow(x0, 25, x1, 25, 3, 'red');
+    ctx.font = "24px serif";
+    ctx.fillStyle = 'red';
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'left';
+    ctx.fillText(`${time.toFixed(3)}ns`, x1, 25);
+  }
+
+  if (mouseAction === 'drag-rise') drawToolTipArrow(x0, rise_x, get_clk_rise_ns());
+  else if (mouseAction === 'drag-fall') drawToolTipArrow(x0, fall_x, get_clk_fall_ns());
+  else if (mouseAction === 'drag-data-delay-start') drawToolTipArrow(data_delay_min_edge_x, d_min_x0, input_min_delay);
+  else if (mouseAction === 'drag-data-delay-end') drawToolTipArrow(data_delay_min_edge_x, d_max_x0, input_max_delay);
+}
+repaint();
+</script>
+
+</body>
+</html>
